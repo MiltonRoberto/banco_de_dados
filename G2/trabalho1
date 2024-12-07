@@ -1,0 +1,337 @@
+create database trabalhoG2;
+
+-- Tabela: Pacientes
+CREATE TABLE Patients (
+    patient_id SERIAL PRIMARY KEY,
+    name VARCHAR(100),
+    date_of_birth DATE,
+    gender VARCHAR(10),
+    address VARCHAR(150),
+    smoker BOOLEAN,
+    contact_number VARCHAR(15),
+    registration_date DATE
+);
+
+-- Alterando a tabela existente para adicionar as novas colunas
+ALTER TABLE Patients
+ADD COLUMN address_start_date DATE,
+ADD COLUMN address_end_date DATE,
+ADD COLUMN is_current_address BOOLEAN;
+
+-- Alterando a tabela Patients para incluir uma chave substituta
+ALTER TABLE Patients
+ADD COLUMN surrogate_patient_id SERIAL PRIMARY KEY;
+
+-- Caso já existam dados, você pode atribuir um valor para surrogate_patient_id, se necessário.
+
+
+
+-- Tabela: Registros Médicos
+CREATE TABLE Medical_Records (
+    record_id SERIAL PRIMARY KEY,
+    patient_id INT,
+    diagnosis_code VARCHAR(10),
+    treatment_id INT,
+    doctor_id INT,
+    visit_date DATE,
+    severity INT, -- 1 = leve, 2 = grave
+    outcome BOOLEAN, -- TRUE = sucesso, FALSE = falha
+    FOREIGN KEY (patient_id) REFERENCES Patients(patient_id)
+);
+
+-- Tabela: Tratamentos
+CREATE TABLE Treatments (
+    treatment_id SERIAL PRIMARY KEY,
+    treatment_type VARCHAR(100),
+    cost FLOAT,
+    active BOOLEAN
+);
+
+-- Tabela: Médicos
+CREATE TABLE Doctors (
+    doctor_id SERIAL PRIMARY KEY,
+    name VARCHAR(100),
+    specialty VARCHAR(50),
+    years_of_experience INT,
+    current_hospital VARCHAR(100)
+);
+
+-- Tabela: Diagnósticos
+CREATE TABLE Diagnoses (
+    diagnosis_code VARCHAR(10) PRIMARY KEY,
+    diagnosis_name VARCHAR(100),
+    risk_factor VARCHAR(100)
+);
+
+-- Inserção de Dados nas Tabelas
+-- Populando Pacientes
+INSERT INTO Patients (name, date_of_birth, gender, address, smoker, contact_number, registration_date)
+SELECT 
+    CONCAT('Paciente_', i)::TEXT AS name,
+    TO_DATE('19' || LPAD((60 + i)::TEXT, 2, '0') || '-01-01', 'YYYY-MM-DD') AS date_of_birth,
+    CASE WHEN i % 2 = 0 THEN 'Male' ELSE 'Female' END AS gender,
+    CONCAT('Rua ', i, ', Bairro ', i)::TEXT AS address,
+    CASE WHEN i % 3 = 0 THEN TRUE ELSE FALSE END AS smoker,
+    CONCAT('(11) 9', LPAD(i::TEXT, 4, '0'), '-', LPAD(i::TEXT, 4, '0'))::TEXT AS contact_number,
+    '2023-01-01'::DATE AS registration_date
+FROM generate_series(1, 50) AS s(i);
+
+
+-- Populando Diagnósticos
+INSERT INTO Diagnoses (diagnosis_code, diagnosis_name, risk_factor)
+VALUES 
+('D01', 'Diabetes', 'Obesidade'),
+('D02', 'Hipertensão', 'Fumante'),
+('D03', 'Doença Cardíaca', 'Colesterol Elevado'),
+('D04', 'Asma', 'Histórico Familiar'),
+('D05', 'Câncer de Pulmão', 'Fumante');
+
+-- Populando Tratamentos
+INSERT INTO Treatments (treatment_type, cost, active)
+SELECT 
+    CONCAT('Tratamento_', i),
+    i * 100.0,
+    CASE WHEN i % 2 = 0 THEN TRUE ELSE FALSE END
+FROM generate_series(1, 50) AS i;
+
+-- Populando Médicos
+INSERT INTO Doctors (name, specialty, years_of_experience, current_hospital)
+SELECT 
+    CONCAT('Médico_', i),
+    CASE WHEN i % 3 = 0 THEN 'Cardiologia' 
+         WHEN i % 3 = 1 THEN 'Pneumologia' 
+         ELSE 'Clínico Geral' END,
+    i % 30,
+    CONCAT('Hospital_', i)
+FROM generate_series(1, 50) AS i;
+
+-- Populando Registros Médicos
+INSERT INTO Medical_Records (patient_id, diagnosis_code, treatment_id, doctor_id, visit_date, severity, outcome)
+SELECT 
+    (i % 50) + 1,
+    CASE WHEN i % 5 = 0 THEN 'D01'
+         WHEN i % 5 = 1 THEN 'D02'
+         WHEN i % 5 = 2 THEN 'D03'
+         WHEN i % 5 = 3 THEN 'D04'
+         ELSE 'D05' END,
+    (i % 50) + 1,
+    (i % 50) + 1,
+    '2023-01-01'::DATE + (i % 365),
+    (i % 2) + 1,
+    CASE WHEN i % 4 = 0 THEN TRUE ELSE FALSE END
+FROM generate_series(1, 50) AS i;
+
+select*from doctors;
+
+-- Inserir os novos dados com os campos SCD Tipo 2 (sem modificar os dados antigos)
+INSERT INTO Patients (name, date_of_birth, gender, address, smoker, contact_number, registration_date, address_start_date, address_end_date, is_current_address)
+SELECT 
+    CONCAT('Paciente_', i)::TEXT AS name,
+    TO_DATE('19' || LPAD((60 + i)::TEXT, 2, '0') || '-01-01', 'YYYY-MM-DD') AS date_of_birth,
+    CASE WHEN i % 2 = 0 THEN 'Male' ELSE 'Female' END AS gender,
+    CONCAT('Rua ', i, ', Bairro ', i)::TEXT AS address,
+    CASE WHEN i % 3 = 0 THEN TRUE ELSE FALSE END AS smoker,
+    CONCAT('(11) 9', LPAD(i::TEXT, 4, '0'), '-', LPAD(i::TEXT, 4, '0'))::TEXT AS contact_number,
+    '2023-01-01'::DATE AS registration_date,
+    '2023-01-01'::DATE AS address_start_date,
+    NULL AS address_end_date,  -- Endereço ainda está ativo
+    TRUE AS is_current_address
+FROM generate_series(1, 50) AS s(i);
+
+-- Atualizando os dados existentes com os campos SCD Tipo 2
+UPDATE Patients
+SET 
+    address_start_date = '2023-01-01',   -- A data de início para todos os registros antigos
+    address_end_date = NULL,              -- Não há fim para o endereço atual
+    is_current_address = TRUE             -- Marcar os registros existentes como sendo os atuais
+WHERE address_end_date IS NULL;
+
+-- Inserir um novo registro com novo endereço (novo histórico de endereço para o paciente)
+INSERT INTO Patients (name, date_of_birth, gender, address, smoker, contact_number, registration_date, address_start_date, address_end_date, is_current_address)
+SELECT 
+    p.name,
+    p.date_of_birth,
+    p.gender,
+    CONCAT('Rua ', p.patient_id + 1, ', Bairro Novo') AS address,  -- Novo endereço
+    p.smoker,
+    p.contact_number,
+    p.registration_date,
+    CURRENT_DATE AS address_start_date,  -- Data de início do novo endereço
+    NULL AS address_end_date,           -- O novo endereço ainda está ativo
+    TRUE AS is_current_address
+FROM Patients p
+WHERE p.patient_id = 1;  -- Escolha o paciente que está mudando o endereço (exemplo: ID 1)
+
+
+
+CREATE TABLE Dim_Patients (
+    surrogate_patient_id SERIAL PRIMARY KEY,
+    name VARCHAR(100),
+    date_of_birth DATE,
+    gender VARCHAR(10),
+    address VARCHAR(150),
+    smoker BOOLEAN,
+    contact_number VARCHAR(15),
+    registration_date DATE,
+    address_start_date DATE,
+    address_end_date DATE,
+    is_current_address BOOLEAN
+);
+
+CREATE TABLE Dim_Diagnoses (
+    diagnosis_code VARCHAR(10) PRIMARY KEY,
+    diagnosis_name VARCHAR(100),
+    risk_factor VARCHAR(100)
+);
+
+CREATE TABLE Dim_Doctors (
+    doctor_id SERIAL PRIMARY KEY,
+    name VARCHAR(100),
+    specialty VARCHAR(50),
+    years_of_experience INT,
+    current_hospital VARCHAR(100)
+);
+
+CREATE TABLE Dim_Treatments (
+    treatment_id SERIAL PRIMARY KEY,
+    treatment_type VARCHAR(100),
+    cost FLOAT,
+    active BOOLEAN
+);
+
+CREATE TABLE Fact_Medical_Records (
+    record_id SERIAL PRIMARY KEY,
+    surrogate_patient_id INT,           -- Chave estrangeira para Dim_Patients
+    diagnosis_code VARCHAR(10),         -- Chave estrangeira para Dim_Diagnoses
+    treatment_id INT,                   -- Chave estrangeira para Dim_Treatments
+    doctor_id INT,                      -- Chave estrangeira para Dim_Doctors
+    visit_date DATE,
+    severity INT,                       -- 1 = leve, 2 = grave
+    outcome BOOLEAN,                    -- TRUE = sucesso, FALSE = falha
+    FOREIGN KEY (surrogate_patient_id) REFERENCES Dim_Patients(surrogate_patient_id),
+    FOREIGN KEY (diagnosis_code) REFERENCES Dim_Diagnoses(diagnosis_code),
+    FOREIGN KEY (treatment_id) REFERENCES Dim_Treatments(treatment_id),
+    FOREIGN KEY (doctor_id) REFERENCES Dim_Doctors(doctor_id)
+);
+
+INSERT INTO Dim_Patients (name, date_of_birth, gender, address, smoker, contact_number, registration_date, address_start_date, address_end_date, is_current_address)
+SELECT 
+    name, date_of_birth, gender, address, smoker, contact_number, registration_date, address_start_date, address_end_date, is_current_address
+FROM Patients;
+
+INSERT INTO Fact_Medical_Records (surrogate_patient_id, diagnosis_code, treatment_id, doctor_id, visit_date, severity, outcome)
+SELECT 
+    p.surrogate_patient_id,   -- Chave substituta do paciente
+    m.diagnosis_code,
+    m.treatment_id,
+    m.doctor_id,
+    m.visit_date,
+    m.severity,
+    m.outcome
+FROM Medical_Records m
+JOIN Dim_Patients p ON m.patient_id = p.patient_id;  -- Referencia corretamente a chave primária do paciente
+
+-- Se precisar garantir que os dados da chave substituta sejam consistentes
+UPDATE Dim_Patients
+SET surrogate_patient_id = patient_id  -- Atualizando a chave substituta com base no patient_id
+FROM Patients
+WHERE Dim_Patients.patient_id = Patients.patient_id;
+
+INSERT INTO Fact_Medical_Records (surrogate_patient_id, diagnosis_code, treatment_id, doctor_id, visit_date, severity, outcome)
+SELECT 
+    p.surrogate_patient_id,   -- Usando surrogate_patient_id de Dim_Patients
+    m.diagnosis_code,
+    m.treatment_id,
+    m.doctor_id,
+    m.visit_date,
+    m.severity,
+    m.outcome
+FROM Medical_Records m
+JOIN Dim_Patients p ON m.patient_id = p.surrogate_patient_id;  -- Usando surrogate_patient_id para fazer o JOIN
+
+DROP TABLE IF EXISTS Fact_Medical_Records;
+
+CREATE TABLE Fact_Medical_Records (
+    record_id SERIAL PRIMARY KEY,
+    surrogate_patient_id INT,           -- Chave estrangeira para Dim_Patients
+    diagnosis_code VARCHAR(10),         -- Chave estrangeira para Dim_Diagnoses
+    treatment_id INT,                   -- Chave estrangeira para Dim_Treatments
+    doctor_id INT,                      -- Chave estrangeira para Dim_Doctors
+    visit_date DATE,
+    severity INT,                       -- 1 = leve, 2 = grave
+    outcome BOOLEAN,                    -- TRUE = sucesso, FALSE = falha
+    FOREIGN KEY (surrogate_patient_id) REFERENCES Dim_Patients(surrogate_patient_id),
+    FOREIGN KEY (diagnosis_code) REFERENCES Dim_Diagnoses(diagnosis_code),
+    FOREIGN KEY (treatment_id) REFERENCES Dim_Treatments(treatment_id),
+    FOREIGN KEY (doctor_id) REFERENCES Dim_Doctors(doctor_id)
+);
+
+INSERT INTO Fact_Medical_Records (surrogate_patient_id, diagnosis_code, treatment_id, doctor_id, visit_date, severity, outcome, cost)
+SELECT 
+    p.surrogate_patient_id,   -- Chave substituta do paciente
+    m.diagnosis_code,
+    m.treatment_id,
+    m.doctor_id,
+    m.visit_date,
+    m.severity,
+    m.outcome,
+    t.cost                     -- Custo do tratamento
+FROM Medical_Records m
+JOIN Dim_Patients p ON m.patient_id = p.patient_id
+JOIN Dim_Treatments t ON m.treatment_id = t.treatment_id;  -- Trazer o custo do tratamento
+
+ALTER TABLE Dim_Patients
+ADD COLUMN region VARCHAR(100);
+
+SELECT
+    p.region,
+    EXTRACT(YEAR FROM mr.visit_date) AS year,
+    SUM(t.cost) AS total_treatment_cost
+FROM
+    Medical_Records mr
+join	
+    Dim_Patients p ON mr.surrogate_patient_id = p.surrogate_patient_id
+JOIN
+    Dim_Treatments t ON mr.treatment_id = t.treatment_id
+GROUP BY
+    p.region,
+    EXTRACT(YEAR FROM mr.visit_date)
+ORDER BY
+    p.region,
+    year;
+   
+   
+SELECT 
+    d.diagnosis_name, 
+    COUNT(DISTINCT p.surrogate_patient_id) AS num_smoking_patients
+FROM 
+    Medical_Records mr
+JOIN 
+    Dim_Patients p ON mr.surrogate_patient_id = p.surrogate_patient_id
+JOIN 
+    Dim_Diagnoses d ON mr.diagnosis_code = d.diagnosis_code
+WHERE 
+    p.smoker = TRUE
+    AND d.risk_factor = 'Fumante'  -- Filtro para diagnósticos de alto risco para fumantes
+GROUP BY 
+    d.diagnosis_name
+ORDER BY 
+    d.diagnosis_name;
+
+   SELECT 
+    d.name AS doctor_name, 
+    (COUNT(CASE WHEN mr.outcome = TRUE THEN 1 END) * 100.0 / COUNT(mr.record_id)) AS success_rate
+FROM 
+    Medical_Records mr
+JOIN 
+    Dim_Doctors d ON mr.doctor_id = d.doctor_id
+GROUP BY 
+    d.doctor_id
+HAVING 
+    COUNT(mr.record_id) > 0  -- Garante que o médico tenha realizado pelo menos um tratamento
+ORDER BY 
+    success_rate DESC;
+
+
+
+
